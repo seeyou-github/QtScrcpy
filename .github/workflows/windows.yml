@@ -1,0 +1,114 @@
+name: Windows
+# 触发规则详解 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#on
+on: 
+  workflow_dispatch:
+  push:
+    paths:
+      - 'QtScrcpy/**'
+      - '!QtScrcpy/res/**'
+      - '.github/workflows/windows.yml'
+      - 'ci/win/**'
+jobs:
+  build:
+    name: Build
+    # windows-latest目前是windows server 2022
+    # windows server 2019安装的是vs2019，windows server 2016安装的是vs2017
+    # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
+    runs-on: windows-latest
+
+    # 矩阵配置 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategymatrix
+    strategy:
+      matrix:
+        qt-ver: [5.15.2]
+        qt-arch: [win64_msvc2019_64]
+        # 配置qt-arch的额外设置msvc-arch，qt-arch-install
+        include:
+          - qt-arch: win64_msvc2019_64
+            msvc-arch: x64
+            qt-arch-install: msvc2019_64
+    # job env,所有steps都可以访问
+    # 不同级别env详解 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#env
+    # 使用表达式语法${{}}访问上下文 https://help.github.com/en/actions/reference/context-and-expression-syntax-for-github-actions
+    env:
+      target-name: QtScrcpy
+      qt-install-dir: ${{ github.workspace }}/../Qt
+      plantform-des: win
+    # 步骤
+    steps:
+      - name: Cache Qt
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.qt-install-dir }}
+          key: ${{ runner.os }}/${{ matrix.qt-ver }}/${{ matrix.qt-arch }}        
+      # 安装Qt
+      - name: Install Qt
+        # 使用外部action。这个action专门用来安装Qt
+        uses: jurplel/install-qt-action@v4.1.1
+        with:
+          dir: ${{ env.qt-install-dir }}
+          # Version of Qt to install
+          version: ${{ matrix.qt-ver }}
+          # Target platform for build
+          target: desktop
+          # Architecture for Windows/Android
+          arch: ${{ matrix.qt-arch }}
+          cached: ${{ steps.cache-qt.outputs.cache-hit }}
+      - name: Resolve Qt Path
+        shell: pwsh
+        run: |
+          $qtRoot = Resolve-Path '${{ env.qt-install-dir }}'
+          $qtConfig = Get-ChildItem -Path $qtRoot -Filter Qt5Config.cmake -Recurse -File | Select-Object -First 1
+          if (-not $qtConfig) {
+            Write-Error "Qt5Config.cmake not found under $qtRoot"
+            exit 1
+          }
+          $qtPath = Split-Path (Split-Path (Split-Path (Split-Path $qtConfig.FullName -Parent) -Parent) -Parent) -Parent
+          "ENV_QT_PATH=$qtPath" >> $env:GITHUB_ENV
+          Write-Host "Resolved ENV_QT_PATH=$qtPath"
+      # 拉取代码
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'true'
+          ssh-key: ${{ secrets.BOT_SSH_KEY }}
+      # 编译msvc
+      - name: Build MSVC
+        # shell介绍 https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#using-a-specific-shell
+        shell: cmd
+        run: |
+          call python ci\generate-version.py
+          call "ci\win\build_for_win.bat" RelWithDebInfo ${{ matrix.msvc-arch }}
+      # 获取ref最后一个/后的内容
+      - name: Get the version
+        shell: bash
+        id: get-version
+        # ${ GITHUB_REF/refs\/tags\// }是linux shell ${}的变量替换语法
+        run: echo "version=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+      # tag 打包
+      - name: Package
+        id: package
+        shell: pwsh
+        env:
+          publish_name: ${{ env.target-name }}-${{ env.plantform-des }}-${{ matrix.msvc-arch }}-${{ steps.get-version.outputs.version }}
+        run: |
+          cmd.exe /c ci\win\publish_for_win.bat ${{ matrix.msvc-arch }} ..\build\${{ env.publish_name }}
+          # 打包zip
+          Compress-Archive -Path "ci\build\${{ env.publish_name }}" -DestinationPath "ci\build\${{ env.publish_name }}.zip" -Force
+          "package-name=${{ env.publish_name }}" >> $env:GITHUB_OUTPUT
+      # 上传artifacts
+      # https://help.github.com/en/actions/configuring-and-managing-workflows/persisting-workflow-data-using-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.package-name }}.zip
+          path: ci\build\${{ steps.package.outputs.package-name }}.zip
+      # Upload to release
+      - name: Upload Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ci\build\${{ steps.package.outputs.package-name }}.zip
+          asset_name: ${{ steps.package.outputs.package-name }}.zip
+          tag: ${{ github.ref_name }}
+          overwrite: true
