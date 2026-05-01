@@ -21,7 +21,7 @@ struct UserBootConfig
     bool framelessWindow  = false;
     bool keepAlive        = false;
     bool simpleMode       = false;
-    bool autoUpdateDevice = true;
+    bool autoUpdateDevice = false;
     bool showToolbar      = true;
 };
 
@@ -47,6 +47,9 @@ public:
     QString getCodecOptions();
     QString getCodecName();
     QStringList getConnectedGroups();
+    const QString &getConfigPath();
+    const QString &getDataPath();
+    const QString &getCachePath();
 
     // user data:common
     void setUserBootConfig(const UserBootConfig &config);
@@ -74,10 +77,12 @@ public:
 
 private:
     explicit Config(QObject *parent = nullptr);
-    const QString &getConfigPath();
 
 private:
+    static QString ensurePortableDir(const QString &subDir);
     static QString s_configPath;
+    static QString s_dataPath;
+    static QString s_cachePath;
     QPointer<QSettings> m_settings;
     QPointer<QSettings> m_userData;
 };

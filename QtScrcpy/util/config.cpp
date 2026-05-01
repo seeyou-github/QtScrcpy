@@ -1,11 +1,15 @@
 ﻿#include <QCoreApplication>
 #include <QFileInfo>
 #include <QSettings>
+#include <QDir>
 #include <QDebug>
 
 #include "config.h"
 #ifdef Q_OS_OSX
 #include "path.h"
+#endif
+#ifdef Q_OS_WIN32
+#include <Windows.h>
 #endif
 
 #define GROUP_COMMON "common"
@@ -91,7 +95,7 @@
 #define COMMON_SIMPLE_MODE_DEF false
 
 #define COMMON_AUTO_UPDATE_DEVICE_KEY "AutoUpdateDevice"
-#define COMMON_AUTO_UPDATE_DEVICE_DEF true
+#define COMMON_AUTO_UPDATE_DEVICE_DEF false
 
 #define COMMON_TRAY_MESSAGE_SHOWN_KEY "TrayMessageShown"
 #define COMMON_TRAY_MESSAGE_SHOWN_DEF false
@@ -119,11 +123,53 @@
 #define PORT_HISTORY_MAX 10
 
 QString Config::s_configPath = "";
+QString Config::s_dataPath = "";
+QString Config::s_cachePath = "";
+
+namespace {
+
+QString getExecutableDirectory()
+{
+#ifdef Q_OS_WIN32
+    wchar_t buffer[4096] = {};
+    DWORD len = GetModuleFileNameW(nullptr, buffer, static_cast<DWORD>(sizeof(buffer) / sizeof(buffer[0])));
+    if (len > 0 && len < static_cast<DWORD>(sizeof(buffer) / sizeof(buffer[0]))) {
+        return QFileInfo(QString::fromWCharArray(buffer, static_cast<int>(len))).absolutePath();
+    }
+#endif
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    if (!appDir.isEmpty()) {
+        return appDir;
+    }
+
+    return QDir::currentPath();
+}
+
+QString makePortablePath(const QString &subDir)
+{
+    const QString baseDir = QDir::cleanPath(getExecutableDirectory() + "/AppData");
+    QDir root(baseDir);
+    if (!root.exists()) {
+        root.mkpath(".");
+    }
+
+    const QString fullPath = QDir::cleanPath(root.filePath(subDir));
+    QDir leaf(fullPath);
+    if (!leaf.exists()) {
+        root.mkpath(subDir);
+    }
+
+    return fullPath;
+}
+
+}
 
 Config::Config(QObject *parent) : QObject(parent)
 {
     m_settings = new QSettings(getConfigPath() + "/config.ini", QSettings::IniFormat);
-    m_userData = new QSettings(getConfigPath() + "/userdata.ini", QSettings::IniFormat);
+    m_userData = new QSettings(getDataPath() + "/userdata.ini", QSettings::IniFormat);
+    getCachePath();
 #if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     m_settings->setIniCodec("UTF-8");
     m_userData->setIniCodec("UTF-8");
@@ -141,22 +187,30 @@ Config &Config::getInstance()
 const QString &Config::getConfigPath()
 {
     if (s_configPath.isEmpty()) {
-        s_configPath = QString::fromLocal8Bit(qgetenv("QTSCRCPY_CONFIG_PATH"));
-        QFileInfo fileInfo(s_configPath);
-        if (s_configPath.isEmpty() || !fileInfo.isDir()) {
-            // default application dir
-            // mac系统当从finder打开app时，默认工作目录不再是可执行程序的目录了，而是"/"
-            // 而Qt的获取工作目录的api都依赖QCoreApplication的初始化，所以使用mac api获取当前目录
-#ifdef Q_OS_OSX
-            // get */QtScrcpy.app path
-            s_configPath = Path::GetCurrentPath();
-            s_configPath += "/Contents/MacOS/config";
-#else
-            s_configPath = "config";
-#endif
-        }
+        s_configPath = makePortablePath("Config");
     }
     return s_configPath;
+}
+
+const QString &Config::getDataPath()
+{
+    if (s_dataPath.isEmpty()) {
+        s_dataPath = makePortablePath("Data");
+    }
+    return s_dataPath;
+}
+
+const QString &Config::getCachePath()
+{
+    if (s_cachePath.isEmpty()) {
+        s_cachePath = makePortablePath("cache");
+    }
+    return s_cachePath;
+}
+
+QString Config::ensurePortableDir(const QString &subDir)
+{
+    return makePortablePath(subDir);
 }
 
 void Config::setUserBootConfig(const UserBootConfig &config)

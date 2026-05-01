@@ -22,6 +22,16 @@ QString s_keyMapPath = "";
 
 namespace {
 
+QString getDefaultRecordPath()
+{
+    const QString recordPath = QDir::cleanPath(Config::getInstance().getDataPath() + "/Record");
+    QDir dir(recordPath);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+    return recordPath;
+}
+
 QString normalizeAdbCandidate(const QString &candidate)
 {
     if (candidate.isEmpty()) {
@@ -98,6 +108,11 @@ Dialog::Dialog(QWidget *parent) : QWidget(parent), ui(new Ui::Widget)
     initUI();
 
     updateBootConfig(true);
+    if (ui->recordPathEdt->text().trimmed().isEmpty()) {
+        ui->recordPathEdt->setText(getDefaultRecordPath());
+    }
+    ui->autoUpdatecheckBox->setChecked(false);
+    ui->autoUpdatecheckBox->setEnabled(false);
 
     on_useSingleModeCheck_clicked();
     on_updateDevice_clicked();
@@ -273,6 +288,9 @@ void Dialog::updateBootConfig(bool toView)
         ui->maxSizeBox->setCurrentIndex(config.maxSizeIndex);
         ui->formatBox->setCurrentIndex(config.recordFormatIndex);
         ui->recordPathEdt->setText(config.recordPath);
+        if (ui->recordPathEdt->text().trimmed().isEmpty()) {
+            ui->recordPathEdt->setText(getDefaultRecordPath());
+        }
         ui->lockOrientationBox->setCurrentIndex(config.lockOrientationIndex);
         ui->framelessCheck->setChecked(config.framelessWindow);
         ui->recordScreenCheck->setChecked(config.recordScreen);
@@ -283,7 +301,8 @@ void Dialog::updateBootConfig(bool toView)
         ui->closeScreenCheck->setChecked(config.autoOffScreen);
         ui->stayAwakeCheck->setChecked(config.keepAlive);
         ui->useSingleModeCheck->setChecked(config.simpleMode);
-        ui->autoUpdatecheckBox->setChecked(config.autoUpdateDevice);
+        ui->autoUpdatecheckBox->setChecked(false);
+        ui->autoUpdatecheckBox->setEnabled(false);
         ui->showToolbar->setChecked(config.showToolbar);
     } else {
         UserBootConfig config;
@@ -302,7 +321,7 @@ void Dialog::updateBootConfig(bool toView)
         config.framelessWindow = ui->framelessCheck->isChecked();
         config.keepAlive = ui->stayAwakeCheck->isChecked();
         config.simpleMode = ui->useSingleModeCheck->isChecked();
-        config.autoUpdateDevice = ui->autoUpdatecheckBox->isChecked();
+        config.autoUpdateDevice = false;
         config.showToolbar = ui->showToolbar->isChecked();
 
         // 保存当前IP到历史记录
@@ -422,6 +441,10 @@ void Dialog::on_startServerBtn_clicked()
     params.stayAwake = ui->stayAwakeCheck->isChecked();
     params.recordFile = ui->recordScreenCheck->isChecked();
     params.recordPath = ui->recordPathEdt->text().trimmed();
+    if (params.recordPath.isEmpty()) {
+        params.recordPath = getDefaultRecordPath();
+        ui->recordPathEdt->setText(params.recordPath);
+    }
     params.recordFileFormat = ui->formatBox->currentText().trimmed();
     params.serverLocalPath = getServerPath();
     params.serverRemotePath = Config::getInstance().getServerPath();
@@ -745,8 +768,8 @@ void Dialog::on_recordScreenCheck_clicked(bool checked)
 
     QString fileDir(ui->recordPathEdt->text().trimmed());
     if (fileDir.isEmpty()) {
-        qWarning() << "please select record save path!!!";
-        ui->recordScreenCheck->setChecked(false);
+        fileDir = getDefaultRecordPath();
+        ui->recordPathEdt->setText(fileDir);
     }
 }
 
@@ -924,11 +947,9 @@ void Dialog::on_installSndcpyBtn_clicked()
 
 void Dialog::on_autoUpdatecheckBox_toggled(bool checked)
 {
-    if (checked) {
-        m_autoUpdatetimer.start(5000);
-    } else {
-        m_autoUpdatetimer.stop();
-    }
+    Q_UNUSED(checked);
+    m_autoUpdatetimer.stop();
+    ui->autoUpdatecheckBox->setChecked(false);
 }
 
 void Dialog::loadIpHistory()

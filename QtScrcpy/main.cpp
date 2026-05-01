@@ -29,14 +29,12 @@ int main(int argc, char *argv[])
 #ifdef Q_OS_WIN32
     qputenv("QTSCRCPY_SERVER_PATH", "../../../QtScrcpy/QtScrcpyCore/src/third_party/scrcpy-server");
     qputenv("QTSCRCPY_KEYMAP_PATH", "../../../keymap");
-    qputenv("QTSCRCPY_CONFIG_PATH", "../../../config");
 #endif
 
 #ifdef Q_OS_OSX
     qputenv("QTSCRCPY_ADB_PATH", "../../../../../../QtScrcpy/QtScrcpyCore/src/third_party/adb/mac/adb");
     qputenv("QTSCRCPY_SERVER_PATH", "../../../../../../QtScrcpy/QtScrcpyCore/src/third_party/scrcpy-server");
     qputenv("QTSCRCPY_KEYMAP_PATH", "../../../../../../keymap");
-    qputenv("QTSCRCPY_CONFIG_PATH", "../../../../../../config");
 #endif
 
 #ifdef Q_OS_LINUX
@@ -49,9 +47,6 @@ int main(int argc, char *argv[])
     }
     if (qgetenv("QTSCRCPY_KEYMAP_PATH").isEmpty()) {
         qputenv("QTSCRCPY_KEYMAP_PATH", "../../../keymap");
-    }
-    if (qgetenv("QTSCRCPY_CONFIG_PATH").isEmpty()) {
-        qputenv("QTSCRCPY_CONFIG_PATH", "../../../config");
     }
 #endif
 
